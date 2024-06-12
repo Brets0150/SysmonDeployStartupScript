@@ -15,7 +15,8 @@
 	Author: Bret.s / License: MIT - Last Updated: 2024-1-25
 	---Updates---
 	2024-1-25 - Initial creation of the script.
-	2024-9-5 - Added debugging messages to the script. Added a reinstall of Sysmon if the service fails to start, but the executable is found.
+	2024-9-5  - Added debugging messages to the script. Added a reinstall of Sysmon if the service fails to start, but the executable is found.
+	2024-12-6 - Move all alterable variables to the top of the script as global variables. Updated event log message method.
 #>
 
 #====================================================================================================================
@@ -39,6 +40,9 @@
 # Used to test the current network status, by pionging an IP address and resolving a domain name. -- Can be changed.
 [string]$global:NetTestDnsName = "google.com"
 [string]$global:NetTestIpAddress = "8.8.8.8"
+
+# Running log of the script. -- This is the log that will be written to the event log. -- DO NOT CHANGE
+[string]$global:LogMessage = ""
 
 # Debugging variable. -- Set to $true to enable debugging messages.
 [bool]$global:debug = $true
@@ -483,18 +487,21 @@ Function Initialize-DeploySysmon {
 
 			# If debug is enabled, write output to the console.
 			if ($global:debug) {Write-Host "Sysmon is not installed, installing Sysmon. TestPath: $global:SysmonExe" -ForegroundColor Yellow}
+			$global:LogMessage += "Sysmon is not installed, installing Sysmon. TestPath: $global:SysmonExe"
 
 			# Sysmon is not installed, install it.
 			# Try to run the Sysmon installer and throw an error if it returns false.
 			if (!(Install-Sysmon)) {
+				$global:LogMessage += "Error installing Sysmon."
 				throw "Error installing Sysmon."
-				Exit 1
+				return $false
 			}
 		}
 
 		if (Test-Path $global:SysmonExe) {
 
 			if ($global:debug) {Write-Host "Sysmon IS found. TestPath: $global:SysmonExe" -ForegroundColor Yellow }
+			$global:LogMessage += "Sysmon IS found. TestPath: $global:SysmonExe"
 
 			# Sysmon is installed, Check if the Sysmon is the latest version, if it is not, update it.
 			[bool]$SysmonUpdateRequired = Get-SysmonUpdateRequired # Adding as a variable to reduce the number of web requests.
@@ -502,17 +509,20 @@ Function Initialize-DeploySysmon {
 			# Check if the Sysmon is the latest version, if it is not, update it.
 			if ($SysmonUpdateRequired) {
 				if ($global:debug) {Write-Host "A Sysmon Update is required." -ForegroundColor Yellow }
+				$global:LogMessage += "A Sysmon Update is required."
 				# Remove the Sysmon.
 				# Try to run the Sysmon removal and throw an error if it returns false.
 				if (!(Remove-Sysmon)) {
+					$global:LogMessage += "Error removing Sysmon."
 					throw "Error removing Sysmon."
-					Exit 1
+					return $false
 				}
 				# An update is required, update it.
 				# Try to run the Sysmon installer and throw an error if it returns false.
 				if (!(Install-Sysmon)) {
+					$global:LogMessage += "Error installing Sysmon."
 					throw "Error installing Sysmon."
-					Exit 1
+					return $false
 				}
 			}
 
@@ -520,18 +530,23 @@ Function Initialize-DeploySysmon {
 			# Try to run the Sysmon installer and throw an error if it returns false.
 			if (!(Start-SysmonService)) {
 				if ($global:debug) {Write-Host "Failed to start Sysmon service, trying reinstall." -ForegroundColor Yellow }
+				# Append the log message.
+				$global:LogMessage += "Failed to start Sysmon service, trying reinstall."
 
 				if (!(Install-Sysmon)) {
+					$global:LogMessage += "Error reinstalling Sysmon failed."
 					throw "Error installing Sysmon."
-					Exit 1
+					return $false
 				}
 
 				if (!(Start-SysmonService)) {
+					$global:LogMessage += "Error reinstalling Sysmon and starting the service failed."
 					throw "Error reinstalling Sysmon and starting the service failed."
-					Exit 1
+					return $false
 				}
 			}
 			# Sysmon is running, & latest version, return true.
+			$global:LogMessage += "Sysmon is running, & latest version."
 			return $true
 		}
 	}
@@ -539,33 +554,40 @@ Function Initialize-DeploySysmon {
 	# IF the Sysmon service is running, check if the Sysmon is the latest version, if it is not, update it.
 	if (Get-SysmonStatus) {
 		if (Get-SysmonUpdateRequired) {
+			# An update is required, update it.
+			$global:LogMessage += "A Sysmon Update is required."
 
 			# Try to run the stop Sysmon service and throw an error if it returns false.
 			if (!(Stop-SysmonService)) {
+				$global:LogMessage += "Error stopping Sysmon service."
 				throw "Error stopping Sysmon service."
-				Exit 1
+				return $false
 			}
 
 			# Try to run the Sysmon removal and throw an error if it returns false.
 			if (!(Remove-Sysmon)) {
+				$global:LogMessage += "Error removing Sysmon."
 				throw "Error removing Sysmon."
-				Exit 1
+				return $false
 			}
 
 			# Try to run the Sysmon installer and throw an error if it returns false.
 			if (!(Install-Sysmon)) {
+				$global:LogMessage += "Error installing Sysmon."
 				throw "Error installing Sysmon."
-				Exit 1
+				return $false
 			}
 
 			# Sysmon is the latest version, start it.
 			# Try to run the Sysmon installer and throw an error if it returns false.
 			if (!(Start-SysmonService)) {
+				$global:LogMessage += "Error starting Sysmon service."
 				throw "Error starting Sysmon service."
-				Exit 1
+				return $false
 			}
 		}
 		# Sysmon is running, & latest version, return true.
+		$global:LogMessage += "Sysmon is running, & already on the latest version."
 		return $true
 	}
 }
@@ -573,14 +595,19 @@ Function Initialize-DeploySysmon {
 # End Core Functions
 #====================================================================================================================
 
+# Run the Initialize-DeploySysmon function.
+Initialize-DeploySysmon
+
 # Try to create the event log, if it already exists, do nothing.
 try {
-	(New-EventLog -LogName Application -Source "SysmonDeploy" -ErrorAction SilentlyContinue) | Out-Null
+	(New-EventLog -LogName Application -Source "Sysmon-Deploy" -ErrorAction SilentlyContinue) | Out-Null
 }
 catch {
 	# Do nothing. The event log already exists.
 }
+
 # Run the Initialize-DeploySysmon function and write the result to the event log.
-Write-EventLog -LogName Application -Source "SysmonGpoDeploy" -EntryType Information -EventId 1 -Message $(Initialize-DeploySysmon) -ErrorAction SilentlyContinue
+Write-EventLog -LogName Application -Source "Sysmon-Deploy" -EntryType Information -EventId 1 -Message "$($global:LogMessage)" -ErrorAction SilentlyContinue
+
 # Exit with error code 0.
 Exit 0
