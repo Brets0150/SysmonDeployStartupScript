@@ -14,9 +14,9 @@
 .NOTES
 	Author: Bret.s / License: MIT - Last Updated: 2024-1-25
 	---Updates---
-	2024-1-25 - Initial creation of the script.
-	2024-9-5  - Added debugging messages to the script. Added a reinstall of Sysmon if the service fails to start, but the executable is found.
-	2024-12-6 - Move all alterable variables to the top of the script as global variables. Updated event log message method.
+	1-25-2024 - Initial creation of the script.
+	5-9-2024  - Added debugging messages to the script. Added a reinstall of Sysmon if the service fails to start, but the executable is found.
+	6-12-2024 - Move all alterable variables to the top of the script as global variables. Updated event log message method.
 #>
 
 #====================================================================================================================
